@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="guinda">#FF7D0000</color>
+    <color name="guinda_oscuro">#FF5A0000</color>
+    <color name="guinda_container">#FFFBEAEA</color>
+    <color name="blanco">#FFFFFFFF</color>
+    <color name="fondo">#FFFDFBFB</color>
+    <color name="superficie">#FFFFFFFF</color>
+    <color name="texto">#FF1B1B1B</color>
+    <color name="borde">#FFE6DDDD</color>
+</resources>
