@@ -53,4 +53,11 @@ data class BorradorReporte(
 sealed interface ResultadoEnvio {
     data class Enviado(val pin: String) : ResultadoEnvio
     data class GuardadoLocal(val pin: String) : ResultadoEnvio
+
+    /** El servidor falló; el reporte queda guardado localmente como pendiente. */
+    data class Fallido(
+        val id: String,
+        val pin: String,
+        val mensaje: String
+    ) : ResultadoEnvio
 }

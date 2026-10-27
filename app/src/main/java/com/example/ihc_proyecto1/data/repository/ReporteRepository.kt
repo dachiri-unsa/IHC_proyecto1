@@ -3,6 +3,7 @@ package com.example.ihc_proyecto1.data.repository
 import com.example.ihc_proyecto1.data.local.ReporteDao
 import com.example.ihc_proyecto1.data.local.ReporteEntity
 import com.example.ihc_proyecto1.data.model.BorradorReporte
+import com.example.ihc_proyecto1.data.model.EstadoReporte
 import com.example.ihc_proyecto1.data.model.Reporte
 import com.example.ihc_proyecto1.data.model.ResultadoEnvio
 import com.example.ihc_proyecto1.data.network.ConectividadRepository
@@ -65,7 +66,38 @@ class ReporteRepository(
             )
         )
 
-        val respuesta = remoto.enviar(borrador, conectividad.hayConexion.value)
+        return subir(id, pinTemporal, borrador)
+    }
+
+    /**
+     * Reintenta subir un reporte que quedó pendiente tras un fallo del servidor.
+     * No crea otra fila en la base: reutiliza el mismo reporte.
+     */
+    suspend fun reintentarEnvio(id: String): ResultadoEnvio {
+        val entidad = dao.porId(id)
+            ?: return ResultadoEnvio.Fallido(
+                id = id,
+                pin = "",
+                mensaje = "No encontramos el reporte guardado. Vuelve a generarlo."
+            )
+
+        if (entidad.estado == EstadoReporte.ONLINE.name) {
+            return ResultadoEnvio.Enviado(entidad.pin)
+        }
+        return subir(entidad.id, entidad.pin, entidad.aBorrador())
+    }
+
+    /** Sube un reporte ya guardado localmente y devuelve el resultado. */
+    private suspend fun subir(
+        id: String,
+        pinTemporal: String,
+        borrador: BorradorReporte
+    ): ResultadoEnvio {
+        val respuesta = remoto.enviar(
+            borrador = borrador,
+            hayConexion = conectividad.hayConexion.value,
+            falloForzado = conectividad.falloEnvioForzado.value
+        )
         return when (respuesta) {
             is ReporteRemoteDataSource.Respuesta.Aceptado -> {
                 val pinOnline = generarPinUnico()
@@ -75,6 +107,14 @@ class ReporteRepository(
 
             is ReporteRemoteDataSource.Respuesta.SinConexion -> {
                 ResultadoEnvio.GuardadoLocal(pinTemporal)
+            }
+
+            is ReporteRemoteDataSource.Respuesta.Error -> {
+                // El fallo simulado es de una sola vez: el reintento ya puede funcionar.
+                if (conectividad.falloEnvioForzado.value) {
+                    conectividad.actualizarFalloEnvioForzado(false)
+                }
+                ResultadoEnvio.Fallido(id, pinTemporal, respuesta.mensaje)
             }
         }
     }
@@ -89,7 +129,11 @@ class ReporteRepository(
         _sincronizando.value = true
         try {
             for (entidad in cola) {
-                val respuesta = remoto.enviar(entidad.aBorrador(), conectividad.hayConexion.value)
+                val respuesta = remoto.enviar(
+                    borrador = entidad.aBorrador(),
+                    hayConexion = conectividad.hayConexion.value,
+                    falloForzado = conectividad.falloEnvioForzado.value
+                )
                 if (respuesta is ReporteRemoteDataSource.Respuesta.Aceptado) {
                     dao.marcarEnLinea(
                         entidad.id,

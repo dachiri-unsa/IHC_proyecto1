@@ -53,6 +53,7 @@ import com.example.ihc_proyecto1.ui.components.PantallaBase
 import com.example.ihc_proyecto1.ui.components.Tarjeta
 import com.example.ihc_proyecto1.ui.notificaciones.NotificadorCustodia
 import com.example.ihc_proyecto1.ui.theme.ColorAviso
+import com.example.ihc_proyecto1.ui.theme.ColorError
 import com.example.ihc_proyecto1.ui.theme.Guinda
 import com.example.ihc_proyecto1.ui.theme.TextoPrimario
 import com.example.ihc_proyecto1.ui.theme.TextoSecundario
@@ -63,7 +64,8 @@ fun PantallaInicio(
     estado: InicioUiState,
     onReportar: () -> Unit,
     onMisReportes: () -> Unit,
-    onCambiarModoSinConexion: (Boolean) -> Unit
+    onCambiarModoSinConexion: (Boolean) -> Unit,
+    onCambiarSimulacionFallo: (Boolean) -> Unit
 ) {
     var mostrarAjustes by remember { mutableStateOf(false) }
 
@@ -120,6 +122,15 @@ fun PantallaInicio(
                 Aviso(
                     texto = "Modo sin conexión activado: los reportes se guardarán localmente.",
                     icono = Icons.Filled.Settings
+                )
+            }
+
+            if (estado.simularFalloEnvio) {
+                Aviso(
+                    texto = "Fallo de envío simulado activado: el próximo envío mostrará un error.",
+                    icono = painterResource(R.drawable.ic_error),
+                    color = ColorError,
+                    fondo = Color(0xFFFBE4E2)
                 )
             }
 
@@ -188,8 +199,10 @@ fun PantallaInicio(
     if (mostrarAjustes) {
         DialogoAjustes(
             modoSinConexion = estado.modoSinConexion,
+            simularFalloEnvio = estado.simularFalloEnvio,
             hayConexionReal = estado.hayConexion,
-            onCambiar = onCambiarModoSinConexion,
+            onCambiarModoSinConexion = onCambiarModoSinConexion,
+            onCambiarFalloEnvio = onCambiarSimulacionFallo,
             onCerrar = { mostrarAjustes = false }
         )
     }
@@ -263,8 +276,10 @@ private fun PasoNumero(numero: Int, texto: String) {
 @Composable
 private fun DialogoAjustes(
     modoSinConexion: Boolean,
+    simularFalloEnvio: Boolean,
     hayConexionReal: Boolean,
-    onCambiar: (Boolean) -> Unit,
+    onCambiarModoSinConexion: (Boolean) -> Unit,
+    onCambiarFalloEnvio: (Boolean) -> Unit,
     onCerrar: () -> Unit
 ) {
     AlertDialog(
@@ -302,7 +317,36 @@ private fun DialogoAjustes(
                         }
                         Switch(
                             checked = modoSinConexion,
-                            onCheckedChange = onCambiar,
+                            onCheckedChange = onCambiarModoSinConexion,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Guinda
+                            )
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    color = Color(0xFFF6EDED),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, Color(0xFFE6DDDD)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Simular fallo de envío", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = "Hace que el próximo envío falle una vez para probar el error.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextoSecundario
+                            )
+                        }
+                        Switch(
+                            checked = simularFalloEnvio,
+                            onCheckedChange = onCambiarFalloEnvio,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
                                 checkedTrackColor = Guinda

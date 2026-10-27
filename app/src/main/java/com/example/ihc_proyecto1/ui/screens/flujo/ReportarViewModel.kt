@@ -14,6 +14,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/** Límite de caracteres de la nota del reporte. */
+const val LIMITE_NOTA = 200
+
 /** Estado del formulario mientras el usuario reporta un objeto. */
 data class BorradorUiState(
     val fotoPath: String? = null,
@@ -31,7 +34,9 @@ data class BorradorUiState(
     val pin: String? = null,
     val reporteId: String? = null,
     val hayConexion: Boolean = true,
-    val mostrarErrores: Boolean = false
+    val mostrarErrores: Boolean = false,
+    /** Mensaje del último fallo de envío; null si no hubo error. */
+    val errorEnvio: String? = null
 ) {
     val destinoVigilancia: String get() = Catalogos.destinoVigilancia(carrera.orEmpty())
     val tiposDisponibles: List<String> get() = Catalogos.tiposDe(categoria)
@@ -47,10 +52,27 @@ data class BorradorUiState(
 
     private val aulaLlena: Boolean get() = !aula.isNullOrBlank()
 
-    val datosCompletos: Boolean
-        get() = categoria != null && tipo != null && carrera != null && aulaLlena
+    val notaExcedeLimite: Boolean get() = nota.length > LIMITE_NOTA
 
+    val datosCompletos: Boolean
+        get() = fotoPath != null &&
+            categoria != null &&
+            tipo != null &&
+            carrera != null &&
+            aulaLlena &&
+            !notaExcedeLimite
+
+    /**
+     * Errores de campo. La foto y el límite de la nota se muestran de inmediato;
+     * el resto aparece después de intentar continuar.
+     */
     fun errorDe(etiqueta: String): String? = when {
+        etiqueta == "Foto" && fotoPath == null ->
+            "La foto es obligatoria. Toma una foto del objeto para continuar."
+
+        etiqueta == "Nota" && notaExcedeLimite ->
+            "La nota no puede superar los 200 caracteres (${nota.length}/$LIMITE_NOTA)."
+
         !mostrarErrores -> null
         etiqueta == "Categoría" && categoria == null -> "Elige una categoría"
         etiqueta == "Tipo" && tipo == null -> "Elige un tipo"
@@ -62,8 +84,16 @@ data class BorradorUiState(
         else -> null
     }
 
+    /** Primer problema que impide continuar, para mostrarlo en el snackbar. */
+    fun primerProblema(): String? = when {
+        fotoPath == null -> "Falta la foto del objeto."
+        notaExcedeLimite -> "La nota supera los 200 caracteres."
+        !datosCompletos -> "Completa los campos obligatorios marcados."
+        else -> null
+    }
+
     fun aBorrador(): BorradorReporte? {
-        if (fotoPath == null || !datosCompletos) return null
+        if (!datosCompletos || fotoPath == null) return null
         return BorradorReporte(
             fotoPath = fotoPath,
             categoria = categoria.orEmpty(),
@@ -134,7 +164,8 @@ class ReportarViewModel(
     }
 
     fun cambiarNota(valor: String) = _estado.update {
-        it.copy(nota = valor.take(200))
+        // No se recorta: si supera el límite, se muestra el error y se bloquea el envío.
+        it.copy(nota = valor)
     }
 
     /** Valida los campos obligatorios; devuelve true si se puede continuar. */
@@ -146,32 +177,73 @@ class ReportarViewModel(
 
     /** Envía el reporte. Notifica el resultado para que la UI navegue. */
     fun enviar(alTerminar: (ResultadoEnvio) -> Unit) {
-        val borrador = _estado.value.aBorrador()
+        val actual = _estado.value
+        // Evita reenviar al rotar la pantalla o repetir un intento ya resuelto.
+        if (actual.enviando || actual.errorEnvio != null || actual.pin != null) return
+
+        val borrador = actual.aBorrador()
         if (borrador == null) {
-            _estado.update { it.copy(mostrarErrores = true) }
+            val mensaje = "Faltan datos obligatorios para enviar el reporte."
+            _estado.update { it.copy(mostrarErrores = true, errorEnvio = mensaje) }
+            alTerminar(ResultadoEnvio.Fallido(id = "", pin = "", mensaje = mensaje))
             return
         }
-        if (_estado.value.enviando) return
 
-        _estado.update { it.copy(enviando = true) }
+        _estado.update { it.copy(enviando = true, errorEnvio = null) }
         viewModelScope.launch {
             val resultado = repositorio.registrarReporte(borrador)
-            _estado.update {
-                when (resultado) {
-                    is ResultadoEnvio.Enviado -> it.copy(
-                        enviando = false,
-                        enviadoOnline = true,
-                        pin = resultado.pin
-                    )
-
-                    is ResultadoEnvio.GuardadoLocal -> it.copy(
-                        enviando = false,
-                        enviadoOnline = false,
-                        pin = resultado.pin
-                    )
-                }
-            }
+            aplicarResultado(resultado)
             alTerminar(resultado)
+        }
+    }
+
+    /** Reintenta el envío del reporte que quedó pendiente por un fallo del servidor. */
+    fun reintentarEnvio(alTerminar: (ResultadoEnvio) -> Unit) {
+        val actual = _estado.value
+        if (actual.enviando) return
+
+        val id = actual.reporteId
+        if (id == null) {
+            // No se llegó a guardar nada: se vuelve a intentar con el borrador actual.
+            _estado.update { it.copy(errorEnvio = null) }
+            enviar(alTerminar)
+            return
+        }
+
+        _estado.update { it.copy(enviando = true, errorEnvio = null) }
+        viewModelScope.launch {
+            val resultado = repositorio.reintentarEnvio(id)
+            aplicarResultado(resultado)
+            alTerminar(resultado)
+        }
+    }
+
+    private fun aplicarResultado(resultado: ResultadoEnvio) {
+        _estado.update {
+            when (resultado) {
+                is ResultadoEnvio.Enviado -> it.copy(
+                    enviando = false,
+                    enviadoOnline = true,
+                    pin = resultado.pin,
+                    errorEnvio = null,
+                    reporteId = null
+                )
+
+                is ResultadoEnvio.GuardadoLocal -> it.copy(
+                    enviando = false,
+                    enviadoOnline = false,
+                    pin = resultado.pin,
+                    errorEnvio = null,
+                    reporteId = null
+                )
+
+                is ResultadoEnvio.Fallido -> it.copy(
+                    enviando = false,
+                    errorEnvio = resultado.mensaje,
+                    pin = resultado.pin.ifBlank { null },
+                    reporteId = resultado.id.ifBlank { null }
+                )
+            }
         }
     }
 

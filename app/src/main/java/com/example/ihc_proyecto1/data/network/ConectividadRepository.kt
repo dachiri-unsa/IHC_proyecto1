@@ -30,12 +30,16 @@ class ConectividadRepository(
 
     private val _redDelSistema = MutableStateFlow(detectarRedDelSistema())
     private val _modoSinConexion = MutableStateFlow(false)
+    private val _falloEnvioForzado = MutableStateFlow(false)
 
     /** Estado real de la red (sin el override de prueba). */
     val redDelSistema: StateFlow<Boolean> = _redDelSistema
 
     /** Interruptor de prueba del modo sin conexión. */
     val modoSinConexion: StateFlow<Boolean> = _modoSinConexion
+
+    /** Interruptor de prueba para simular que el servidor rechaza el envío. */
+    val falloEnvioForzado: StateFlow<Boolean> = _falloEnvioForzado
 
     /** Conexión efectiva que usa la app para decidir si envía o guarda local. */
     val hayConexion: StateFlow<Boolean> =
@@ -56,6 +60,10 @@ class ConectividadRepository(
 
     fun actualizarModoSinConexion(activo: Boolean) {
         _modoSinConexion.value = activo
+    }
+
+    fun actualizarFalloEnvioForzado(activo: Boolean) {
+        _falloEnvioForzado.value = activo
     }
 
     /** Se puede forzar la sincronización cuando se desactiva el modo prueba. */

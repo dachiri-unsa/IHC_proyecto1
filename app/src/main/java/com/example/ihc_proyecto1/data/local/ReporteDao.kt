@@ -15,6 +15,9 @@ interface ReporteDao {
     @Query("SELECT * FROM reportes WHERE id = :id LIMIT 1")
     fun observarPorId(id: String): Flow<ReporteEntity?>
 
+    @Query("SELECT * FROM reportes WHERE id = :id LIMIT 1")
+    suspend fun porId(id: String): ReporteEntity?
+
     @Query("SELECT COUNT(*) FROM reportes WHERE estado = 'PENDIENTE'")
     fun observarPendientes(): Flow<Int>
 

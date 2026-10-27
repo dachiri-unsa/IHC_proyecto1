@@ -10,6 +10,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.ihc_proyecto1.data.model.ResultadoEnvio
 import com.example.ihc_proyecto1.ui.Factorias
 import com.example.ihc_proyecto1.ui.screens.detalle.DetalleReporteViewModel
 import com.example.ihc_proyecto1.ui.screens.detalle.PantallaDetalleReporte
@@ -42,7 +43,8 @@ fun NavegacionApp(navController: NavHostController = rememberNavController()) {
                 estado = estado,
                 onReportar = { navController.navigate(Rutas.Flujo.CAPTURAR) },
                 onMisReportes = { navController.navigate(Rutas.MIS_REPORTES) },
-                onCambiarModoSinConexion = vm::cambiarModoSinConexion
+                onCambiarModoSinConexion = vm::cambiarModoSinConexion,
+                onCambiarSimulacionFallo = vm::cambiarSimulacionFallo
             )
         }
 
@@ -109,6 +111,7 @@ fun NavegacionApp(navController: NavHostController = rememberNavController()) {
                         popUpTo(Rutas.Flujo.DATOS) { inclusive = true }
                     }
                 },
+                onTomarFoto = { navController.navigate(Rutas.Flujo.CAPTURAR) },
                 onContinuar = {
                     if (reporte.validar()) navController.navigate(Rutas.Flujo.RESUMEN)
                 }
@@ -133,15 +136,27 @@ fun NavegacionApp(navController: NavHostController = rememberNavController()) {
         }
 
         composable(Rutas.Flujo.ENVIANDO) {
+            val irAGenerado = {
+                navController.navigate(Rutas.Flujo.GENERADO) {
+                    popUpTo(Rutas.Flujo.ENVIANDO) { inclusive = true }
+                }
+            }
+
             PantallaEnviando(
                 hayConexion = borrador.hayConexion,
+                errorEnvio = borrador.errorEnvio,
+                hayReporteGuardado = borrador.pin != null,
                 onEnviar = {
-                    reporte.enviar {
-                        navController.navigate(Rutas.Flujo.GENERADO) {
-                            popUpTo(Rutas.Flujo.ENVIANDO) { inclusive = true }
-                        }
+                    reporte.enviar { resultado ->
+                        if (resultado !is ResultadoEnvio.Fallido) irAGenerado()
                     }
-                }
+                },
+                onReintentar = {
+                    reporte.reintentarEnvio { resultado ->
+                        if (resultado !is ResultadoEnvio.Fallido) irAGenerado()
+                    }
+                },
+                onContinuarGuardado = irAGenerado
             )
         }
 
